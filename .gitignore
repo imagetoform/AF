@@ -51,3 +51,7 @@ src/agentforge/persona/chatbot.json
 .pytest_cache/
 .cursor/
 
+
+# Pressure Cooker Poetry: private manuscript, never commit
+pressure-cooker/corpus/corpus.txt
+pressure-cooker/dist/
