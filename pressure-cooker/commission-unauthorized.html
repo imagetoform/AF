@@ -46,6 +46,8 @@ nav button:hover::before{width:4px}
 nav button[aria-pressed="true"]{color:#14110e}
 nav button[aria-pressed="true"]::before{width:100%;z-index:-1}
 nav button[aria-pressed="true"]{z-index:0}
+nav button:disabled{opacity:.4;cursor:default}nav button:disabled::before{width:2px}
+#bUndo{--rule:#d77f8e}
 #bIndex{--rule:#ece6da}#bMine{--rule:#e9a15a}#bBack{--rule:#c48a5c}#bSound{--rule:#7cc4b4}
 footer{position:fixed;left:22px;bottom:16px;right:22px;display:flex;justify-content:space-between;gap:16px;align-items:flex-end;pointer-events:none;z-index:4;font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;color:var(--ink-2)}
 footer .hint{max-width:60ch;text-align:right}
@@ -71,6 +73,8 @@ footer .hint{max-width:60ch;text-align:right}
 #answers{position:fixed;inset:0;pointer-events:none;z-index:2}
 .ans{position:absolute;pointer-events:none;background:rgba(14,11,9,.62);padding:10px 14px 8px 16px!important;border-radius:0 3px 3px 0;max-width:min(380px,74vw);padding:2px 0 0 14px;border-left:2px solid var(--c,#ccc);opacity:1;transition:opacity 1.2s ease,transform 1.2s ease}
 .ans.enter{opacity:0;transform:translateY(6px)}
+.ans .saw{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;color:var(--ink-2);margin:-2px 0 6px}
+.ans .saw i{font-style:normal;color:var(--ink-3)}
 .ans .desc{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.07em;color:var(--ink-2);margin-bottom:6px;text-transform:lowercase}
 .ans button{pointer-events:auto}
 #wall,#answers,.ans,.ans .frag{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
@@ -133,7 +137,7 @@ body.stepback #answers *{pointer-events:none}
   .mast b{font-size:10px;letter-spacing:.14em}
   .mast span{font-size:13px}
   nav{gap:5px;justify-content:flex-start;flex-wrap:nowrap}
-  nav button{padding:6px 8px 6px 10px;font-size:10px;letter-spacing:.02em}
+  nav button{padding:6px 7px 6px 9px;font-size:10px;letter-spacing:0}
   .ans{max-width:none;right:14px}
   .ans .fold{right:8px;top:8px}
   footer{left:14px;right:14px;bottom:12px;font-size:10px}
@@ -162,6 +166,7 @@ body.stepback #answers *{pointer-events:none}
     <button id="bMine" type="button">your wall</button>
     <button id="bBack" type="button" aria-pressed="false">step back</button>
     <button id="bSound" type="button" aria-pressed="false">sound off</button>
+    <button id="bUndo" type="button" aria-keyshortcuts="Control+Z Meta+Z" disabled>undo</button>
   </nav>
 </header>
 
@@ -175,10 +180,11 @@ body.stepback #answers *{pointer-events:none}
 </div>
 
 <div id="answers" aria-live="polite"></div>
+<p id="status" class="sr" role="status" aria-live="polite"></p>
 
 <footer>
   <div id="count">the room is cool</div>
-  <div class="hint">kept only in this browser &middot; nothing is posted</div>
+  <div class="hint" id="hint">kept only in this browser &middot; nothing is posted</div>
 </footer>
 
 <div class="scrim" id="scrim"></div>
@@ -548,6 +554,7 @@ wall.addEventListener('pointerdown',e=>{
   e.preventDefault();
   try{wall.setPointerCapture(e.pointerId);}catch(err){}
   cur={pts:[[e.clientX,e.clientY,now()]],seed:(Math.random()*2**31)|0,id:e.pointerId};
+  cancelLooks();
   hideIntro();
 });
 wall.addEventListener('pointermove',e=>{
@@ -582,6 +589,8 @@ function finish(pts,seed){
   applyWarmth();
   tone(mark);
   renderAnswers(S.marks.length-1);
+  updateUndo();
+  recognise(mark);
 }
 
 /* keyboard drawing */
@@ -592,7 +601,7 @@ wall.addEventListener('keydown',e=>{
   if(dirs[e.key]){
     e.preventDefault();hideIntro();
     if(!kpos)kpos=[W*.5,H*.55];
-    if(!kcur)kcur={pts:[[kpos[0],kpos[1],now()]],seed:(Math.random()*2**31)|0};
+    if(!kcur){kcur={pts:[[kpos[0],kpos[1],now()]],seed:(Math.random()*2**31)|0};cancelLooks();}
     const step=e.shiftKey?Math.min(W,H)*.09:Math.min(W,H)*.03;const [ddx,ddy]=dirs[e.key];
     const last=kcur.pts[kcur.pts.length-1];const t0=now();
     // interpolate so the brush has a path, not a jump
@@ -615,7 +624,7 @@ function renderAnswers(fresh=-1){
     const c=THEMES[m.theme].c;const p=byKey[m.ans.key];
     if(m.open){
       const d=document.createElement('div');d.className='ans'+(i===fresh&&!RM.matches?' enter':'');d.style.setProperty('--c',c);d.dataset.i=i;
-      d.innerHTML=`<div class="desc">${esc(m.desc.join(' · '))}</div><div class="frag">${linesOf(m.ans).map(l=>`<span>${esc(l.text)}</span>`).join('')}</div><button class="open" type="button">read “${esc(p.title)}” whole</button><button class="fold" type="button" aria-label="fold this answer into its mark">–</button>`;
+      d.innerHTML=`<div class="desc">${esc(m.desc.join(' · '))}</div>${sawLine(m)}<div class="frag">${linesOf(m.ans).map(l=>`<span>${esc(l.text)}</span>`).join('')}</div><button class="open" type="button">read “${esc(p.title)}” whole</button><button class="fold" type="button" aria-label="fold this answer into its mark">–</button>`;
       d.querySelector('.open').onclick=()=>openPoem(p,m);
       d.querySelector('.fold').onclick=()=>{m.open=false;save();renderAnswers();};
       ansBox.appendChild(d);
@@ -675,6 +684,7 @@ scrim.onclick=hide;
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=hide);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&openSheet){e.preventDefault();hide();}
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==='z'||e.key==='Z')&&!openSheet){e.preventDefault();undo();}
   if(e.key==='Tab'&&openSheet){const f=[...openSheet.querySelectorAll('button:not(:disabled),[tabindex="0"]')];if(!f.length)return;const a=f[0],z=f[f.length-1];
     if(e.shiftKey&&document.activeElement===a){e.preventDefault();z.focus();}else if(!e.shiftKey&&document.activeElement===z){e.preventDefault();a.focus();}}
   if(openSheet&&openSheet.id==='reader'&&!e.target.closest('button')){if(e.key==='ArrowRight'){step(1);}if(e.key==='ArrowLeft'){step(-1);}}
@@ -719,10 +729,10 @@ $('#bIndex').onclick=()=>{buildIndex();show($('#index'));};
 
 function buildMine(){
   const n=S.marks.length;
-  let h=n?`<figure class="pic"><img alt="Your wall as it stands: ${n} mark${n>1?'s':''}" src="${snapshot()}"></figure><p class="lead">${n} mark${n>1?'s':''}, answered by ${new Set(S.marks.map(m=>m.ans.key)).size} of ${poems.length} poems. This wall exists only in this browser. Nothing here is posted, scored or shared.</p>`
+  let h=n?`<figure class="pic"><img alt="Your wall as it stands: ${n} mark${n>1?'s':''}" src="${snapshot()}"></figure><p class="lead">${n} mark${n>1?'s':''}, answered by ${new Set(S.marks.map(m=>m.ans.key)).size} of ${poems.length} poems. This wall exists only in this browser. Nothing here is posted or scored.${recogOn?' With your permission, a small picture of your marks is shown to Claude only to guess what they depict; the poems never leave the page.':''}</p>`
         :`<p class="lead">Nothing yet. Close this and make a mark on the wall.</p>`;
   S.marks.forEach((m,i)=>{const p=byKey[m.ans.key];
-    h+=`<div class="entry" style="--c:${THEMES[m.theme].c}"><div class="desc">${i+1} · ${esc(m.desc.join(' · '))}</div><div class="frag">${linesOf(m.ans).map(l=>`<span>${esc(l.text)}</span>`).join('')}</div><button type="button" data-k="${esc(p.key)}">“${esc(p.title)}”, whole</button></div>`;});
+    h+=`<div class="entry" style="--c:${THEMES[m.theme].c}"><div class="desc">${i+1} · ${esc(m.desc.join(' · '))}${m.saw?' · looks like: '+esc(m.saw)+' (Claude’s guess)':''}</div><div class="frag">${linesOf(m.ans).map(l=>`<span>${esc(l.text)}</span>`).join('')}</div><button type="button" data-k="${esc(p.key)}">“${esc(p.title)}”, whole</button></div>`;});
   if(n)h+=`<button type="button" class="danger" id="wipe">begin a new wall</button>`;
   $('#mBody').innerHTML=h;
   $('#mBody').querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>openPoem(byKey[b.dataset.k]));
@@ -746,6 +756,124 @@ function tone(m){
 }
 
 /* ================= intro ================= */
+/* ================= undo ================= */
+const statusEl=$('#status');
+function say(t){statusEl.textContent='';setTimeout(()=>statusEl.textContent=t,30);}
+function updateUndo(){const b=$('#bUndo');b.disabled=!S.marks.length;b.setAttribute('aria-label',S.marks.length?`undo mark ${S.marks.length}`:'undo (no marks)');}
+function undo(){
+  if(kcur){kcur=null;redrawAll();return;}
+  const m=S.marks.pop();if(!m)return;
+  const ctl=looking.get(m);if(ctl){ctl.abort();looking.delete(m);}
+  const keep=innerWidth<640?1:3;
+  S.marks.forEach((x,i)=>{if(i>=S.marks.length-keep)x.open=true;});
+  save();redrawAll(true);applyWarmth();renderAnswers();updateUndo();
+  if(!S.marks.length){introGone=false;$('#intro').classList.remove('gone','returning');}
+  say(`Mark removed. ${S.marks.length} mark${S.marks.length===1?'':'s'} left.`);
+}
+$('#bUndo').onclick=undo;
+
+/* ================= what the drawing depicts =================
+   Only a picture of the visitor's marks is sent, and only after they finish a mark.
+   Claude's answer is a guess about the drawing; the passage is always found here, locally,
+   in the poems, and shown exactly as written. Claude's words are never shown as poetry. */
+let samplerP=null,recogOn=false,recogOff=false,backoffUntil=0;
+const looking=new Map();
+function cancelLooks(){for(const c of looking.values())c.abort();}
+function getSampler(){
+  if(!samplerP){
+    samplerP=(async()=>{
+      try{
+        const use=window.claude&&window.claude.use;if(typeof use!=='function')return null;
+        const s=await Promise.race([use.call(window.claude,'sample'),new Promise(r=>setTimeout(()=>r(null),10000))]);
+        if(!s||typeof s.json!=='function'||typeof s.limits!=='function')return null;
+        const lim=await s.limits().catch(()=>null);
+        if(!lim||!lim.images)return null;
+        recogOn=true;$('#hint').textContent='kept in this browser · with your permission, drawings are shown to Claude only to see what they depict · the poems never leave the page';
+        return s;
+      }catch(e){return null;}
+    })();
+  }
+  return samplerP;
+}
+function sawLine(m){
+  if(m.saw)return `<div class="saw">looks like: ${esc(m.saw)} <i>(Claude’s guess)</i></div>`;
+  if(looking.has(m))return `<div class="saw"><i>looking at your drawing…</i></div>`;
+  return '';
+}
+function drawingBlob(mark){
+  // the newest mark plus any earlier marks close to it: a doodle is often several strokes
+  const box=m=>{let x0=1,y0=1,x1=0,y1=0;for(const p of m.pts){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]);}return[x0*W,y0*H,x1*W,y1*H];};
+  let b=box(mark);const near=Math.min(W,H)*.12;const grp=[mark];
+  for(let pass=0;pass<2;pass++)for(const m of S.marks){if(grp.includes(m))continue;const c=box(m);
+    if(c[0]<b[2]+near&&c[2]>b[0]-near&&c[1]<b[3]+near&&c[3]>b[1]-near){grp.push(m);b=[Math.min(b[0],c[0]),Math.min(b[1],c[1]),Math.max(b[2],c[2]),Math.max(b[3],c[3])];}}
+  const pad=40,side=Math.max(b[2]-b[0],b[3]-b[1])+pad*2,cxm=(b[0]+b[2])/2,cym=(b[1]+b[3])/2;
+  const N=384,c=document.createElement('canvas');c.width=c.height=N;const g=c.getContext('2d');
+  g.fillStyle=getComputedStyle(document.body).backgroundColor||'#1b2226';g.fillRect(0,0,N,N);
+  const k=N/side;g.setTransform(k,0,0,k,-(cxm-side/2)*k,-(cym-side/2)*k);
+  grp.sort((a,b2)=>S.marks.indexOf(a)-S.marks.indexOf(b2)).forEach(m=>strokePath(g,m.pts,THEMES[m.theme].c,m.seed,m.wb,m.w));
+  return new Promise(res=>c.toBlob(res,'image/png'));
+}
+const STOP=new Set('a an the of and or to in on at by for with from as is it its be this that these those into over under up down out off very some any thing things something'.split(' '));
+function stem(w){w=w.toLowerCase().replace(/[^a-z]/g,'');if(w.length>5)w=w.replace(/(ing|ings|ed|es|ly|er|ers|ness|ment|ance|ence)$/,'');if(w.length>3)w=w.replace(/s$/,'');if(w.length>4)w=w.replace(/e$/,'');return w;}
+const stems=t=>(t.toLowerCase().match(/[a-z']+/g)||[]).map(stem).filter(x=>x&&!STOP.has(x));
+function findByMeaning(depicts,assoc){
+  const terms=new Map();// stem-sequence -> weight
+  const add=(phrase,wPhrase,wWord)=>{const st=stems(phrase);if(!st.length)return;if(st.length>1)terms.set(st.join(' '),Math.max(terms.get(st.join(' '))||0,wPhrase));for(const x of st)if(x.length>2)terms.set(x,Math.max(terms.get(x)||0,wWord));};
+  add(depicts,4,2.2);assoc.forEach(a=>add(a,3,1));
+  const others=S.marks.slice(0,-1);
+  const seen=new Set(others.map(m=>m.ans.key+':'+m.ans.start));
+  const used={};others.forEach(m=>used[m.ans.key]=(used[m.ans.key]||0)+1);
+  let best=null,bs=0;
+  for(const p of poems)for(const b of p.blocks){if(b.t!=='st')continue;const L=b.lines;
+    for(let i=0;i<L.length;i++)for(let n=1;n<=4&&i+n<=L.length;n++){
+      const seq=stems(L.slice(i,i+n).map(l=>l.text).join(' '));const joined=' '+seq.join(' ')+' ';
+      let sc=0;for(const [t,w] of terms)if(joined.includes(' '+t+' '))sc+=w;
+      if(!sc)continue;
+      // the first and last lines must carry something, so the passage is about the thing, not padded
+      const first=' '+stems(L[i].text).join(' ')+' ',last=' '+stems(L[i+n-1].text).join(' ')+' ';
+      let edge=false;for(const t of terms.keys())if(first.includes(' '+t+' ')){edge=true;break;}
+      if(!edge)continue;
+      const startsThought=i===0||/[.?!:—]\s*$/.test(L[i-1].text),rests=i+n===L.length||/[.?!:—]\s*$/.test(L[i+n-1].text);
+      sc+=(startsThought?.8:0)+(rests?.6:0)-(n-1)*.35-(used[p.key]||0)*.6-(seen.has(p.key+':'+L[i].idx)?3:0);
+      if(sc>bs){bs=sc;best={key:p.key,start:L[i].idx,count:n};}
+    }}
+  return bs>=2.6?best:null;
+}
+async function recognise(mark){
+  if(recogOff||Date.now()<backoffUntil)return;
+  const ctl=new AbortController();looking.set(mark,ctl);
+  const timer=setTimeout(()=>ctl.abort(),7000);
+  let shown=false;const showLooking=setTimeout(()=>{if(looking.has(mark)&&recogOn){shown=true;renderAnswers();}},250);
+  try{
+    // wait for the hand to rest: a doodle is often several strokes, and the next stroke cancels this look
+    await new Promise(r=>{const t=setTimeout(r,1100);ctl.signal.addEventListener('abort',()=>{clearTimeout(t);r();});});
+    if(ctl.signal.aborted)return;
+    const s=await getSampler();
+    if(!s||ctl.signal.aborted){return;}
+    const blob=await drawingBlob(mark);if(!blob)return;
+    const prompt='The image shows a visitor’s hand-drawn doodle: painted brush strokes on a dark wall. Guess what it depicts. Reply with JSON only, no other text: {"depicts": "short noun phrase for your best guess of what the drawing represents, or \\"abstract\\" if it is not recognisably anything", "confidence": number from 0 to 1, "associations": [8 to 12 single words or short phrases: the object, its parts, what it does, what it evokes, synonyms]}';
+    const r=await s.json(prompt,{images:[blob],modelTier:'quick',signal:ctl.signal});
+    if(!S.marks.includes(mark))return;
+    const dep=r&&typeof r.depicts==='string'?r.depicts.trim().slice(0,60):'';
+    const conf=r&&typeof r.confidence==='number'?r.confidence:0;
+    const assoc=r&&Array.isArray(r.associations)?r.associations.filter(x=>typeof x==='string').map(x=>x.slice(0,40)).slice(0,14):[];
+    if(!dep||/^abstract/i.test(dep)||conf<.45)return;
+    // the guess is noted either way; the answer changes only when a passage truly fits
+    mark.saw=dep;
+    const found=findByMeaning(dep,assoc);
+    if(found){mark.ans=found;mark.by='depiction';}
+    save();
+  }catch(e){
+    const code=e&&e.code;
+    if(code==='not_granted'||code==='images_unavailable'){recogOff=true;recogOn=false;$('#hint').textContent='kept only in this browser · nothing is posted';}
+    else if(code==='rate_limited')backoffUntil=Date.now()+90000;
+  }finally{
+    clearTimeout(timer);clearTimeout(showLooking);
+    const was=looking.get(mark)===ctl;looking.delete(mark);
+    if(was&&S.marks.includes(mark)&&(shown||mark.saw))renderAnswers(mark.saw?S.marks.indexOf(mark):-1);
+  }
+}
+
 let introGone=false;
 function hideIntro(){if(introGone)return;introGone=true;$('#intro').classList.add('gone');}
 if(S.marks.length){$('#intro').classList.add('returning');}
@@ -753,6 +881,7 @@ if(S.marks.length){$('#intro').classList.add('returning');}
 addEventListener('resize',()=>{clearTimeout(resize.t);resize.t=setTimeout(resize,80);});
 resize();
 renderAnswers();
+updateUndo();
 
 })();
 </script>
